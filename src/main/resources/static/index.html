@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>酒水库存管理系统</title>
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+  <style>
+    body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; background-color: #f5f7fa; margin: 0; padding: 20px; }
+    .container { max-width: 1100px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .card-header { font-weight: bold; font-size: 20px; color: #409EFF; }
+    .user-info { display: flex; align-items: center; gap: 15px; }
+  </style>
+</head>
+<body>
+
+<div id="app" class="container">
+  <el-card>
+    <template #header>
+      <div class="header">
+        <span class="card-header">🍾 酒水库存管理系统</span>
+
+        <div class="user-info">
+          <el-button v-if="currentUser.role === 'ADMIN'" type="success" @click="handleAdd" round> + 新增酒水</el-button>
+
+          <el-button type="primary" @click="fetchGoodsData" round>刷新数据</el-button>
+
+          <el-tag type="info">当前账号: {{ currentUser.username }} ({{ currentUser.role === 'ADMIN' ? '管理员' : '顾客' }})</el-tag>
+          <el-button type="danger" size="small" @click="logout" plain>退出登录</el-button>
+        </div>
+      </div>
+    </template>
+
+    <el-table :data="tableData" border stripe style="width: 100%" v-loading="loading">
+      <el-table-column prop="id" label="编号" width="70" align="center"></el-table-column>
+      <el-table-column prop="name" label="商品名称" align="center"></el-table-column>
+      <el-table-column prop="category" label="分类" width="100" align="center">
+        <template #default="scope">
+          <el-tag :type="scope.row.category === '白酒' ? 'danger' : 'success'">{{ scope.row.category }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="price" label="单价" width="100" align="center">
+        <template #default="scope">
+          <span style="color: #f56c6c; font-weight: bold;">¥ {{ scope.row.price }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="当前库存 (瓶/件)" align="center">
+        <el-table-column prop="stockSale" label="售卖" align="center"></el-table-column>
+        <el-table-column prop="stockGift" label="赠品" align="center"></el-table-column>
+        <el-table-column prop="stockScrap" label="报废" align="center"></el-table-column>
+      </el-table-column>
+
+      <el-table-column v-if="currentUser.role === 'ADMIN'" label="操作" width="160" align="center" fixed="right">
+        <template #default="scope">
+          <el-button size="small" type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+          <el-button size="small" type="danger" @click="handleDelete(scope.row.id)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-card>
+
+  <el-dialog v-model="dialogVisible" :title="form.id ? '修改酒水信息' : '录入新酒水'" width="500px">
+    <el-form :model="form" label-width="100px">
+      <el-form-item label="商品名称"><el-input v-model="form.name" placeholder="例如：五粮液"></el-input></el-form-item>
+      <el-form-item label="分类">
+        <el-select v-model="form.category" placeholder="请选择分类" style="width: 100%">
+          <el-option label="白酒" value="白酒"></el-option>
+          <el-option label="啤酒" value="啤酒"></el-option>
+          <el-option label="红酒" value="红酒"></el-option>
+          <el-option label="洋酒" value="洋酒"></el-option>
+        </el-select>
+      </el-form-item>
+      <el-form-item label="单价 (元)"><el-input-number v-model="form.price" :min="0" :precision="2" :step="10"></el-input-number></el-form-item>
+      <el-form-item label="售卖库存"><el-input-number v-model="form.stockSale" :min="0"></el-input-number></el-form-item>
+      <el-form-item label="赠品库存"><el-input-number v-model="form.stockGift" :min="0"></el-input-number></el-form-item>
+      <el-form-item label="报废库存"><el-input-number v-model="form.stockScrap" :min="0"></el-input-number></el-form-item>
+    </el-form>
+    <template #footer>
+            <span class="dialog-footer">
+                <el-button @click="dialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="saveGoods">确定保存</el-button>
+            </span>
+    </template>
+  </el-dialog>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<script src="https://unpkg.com/element-plus"></script>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+<script>
+  const { createApp, ref, onMounted } = Vue;
+
+  const app = createApp({
+    setup() {
+      // 🌟 1. 尝试从浏览器的缓存里拿到登录信息
+      const currentUser = ref(JSON.parse(localStorage.getItem('currentUser') || '{}'));
+
+      // 🌟 2. 身份拦截墙：如果没有拿到账号信息，说明他没登录，一脚踢回 login.html
+      if (!currentUser.value.username) {
+        window.location.href = 'login.html';
+      }
+
+      const tableData = ref([]);
+      const loading = ref(true);
+      const dialogVisible = ref(false);
+      const form = ref({ name: '', category: '白酒', price: 0, stockSale: 0, stockGift: 0, stockScrap: 0 });
+
+      // 查询数据
+      const fetchGoodsData = () => {
+        loading.value = true;
+        axios.get('/goods/list').then(res => {
+          tableData.value = res.data;
+          loading.value = false;
+        }).catch(err => { console.error(err); loading.value = false; });
+      };
+
+      // 新增按钮点击
+      const handleAdd = () => {
+        form.value = { name: '', category: '白酒', price: 0, stockSale: 0, stockGift: 0, stockScrap: 0 };
+        dialogVisible.value = true;
+      };
+
+      // 编辑按钮点击
+      const handleEdit = (row) => {
+        form.value = { ...row };
+        dialogVisible.value = true;
+      };
+
+      // 删除按钮点击
+      const handleDelete = (id) => {
+        ElementPlus.ElMessageBox.confirm('确定要删除这条商品记录吗？', '警告', {
+          confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
+        }).then(() => {
+          axios.delete('/goods/delete/' + id).then(() => {
+            ElementPlus.ElMessage.success('删除成功！');
+            fetchGoodsData();
+          });
+        }).catch(() => {});
+      };
+
+      // 保存表单
+      const saveGoods = () => {
+        const url = form.value.id ? '/goods/update' : '/goods/add';
+        axios.post(url, form.value).then(() => {
+          ElementPlus.ElMessage.success(form.value.id ? '修改成功！' : '录入成功！');
+          dialogVisible.value = false;
+          fetchGoodsData();
+        }).catch(() => {
+          ElementPlus.ElMessage.error('操作失败');
+        });
+      };
+
+      // 🌟 3. 退出登录功能
+      const logout = () => {
+        // 清除浏览器里的账号记忆
+        localStorage.removeItem('currentUser');
+        // 跳回登录页
+        window.location.href = 'login.html';
+      };
+
+      // 页面加载时执行
+      onMounted(() => {
+        // 只有在已登录的情况下，才去请求数据
+        if (currentUser.value.username) {
+          fetchGoodsData();
+        }
+      });
+
+      // 必须把变量 return 出去，HTML 里才能用到
+      return {
+        currentUser, logout, // 暴露用户信息和退出功能
+        tableData, loading, fetchGoodsData,
+        dialogVisible, form, handleAdd, handleEdit, handleDelete, saveGoods
+      };
+    }
+  });
+
+  app.use(ElementPlus);
+  app.mount('#app');
+</script>
+
+</body>
+</html>

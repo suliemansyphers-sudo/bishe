@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>系统登录与注册</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <style>
+        body {
+            background-color: #f5f7fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-image: linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%); /* 加了个漂亮的渐变背景 */
+        }
+        .login-card { width: 400px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .card-header { text-align: center; font-size: 24px; font-weight: bold; color: #409EFF; margin: 0;}
+    </style>
+</head>
+<body>
+<div id="app">
+    <el-card class="login-card">
+        <template #header>
+            <p class="card-header">{{ isLoginMode ? '🔑 系统登录' : '📝 用户注册' }}</p>
+        </template>
+
+        <el-form :model="form" label-width="80px">
+            <el-form-item label="用户名">
+                <el-input v-model="form.username" placeholder="请输入字母或数字"></el-input>
+            </el-form-item>
+            <el-form-item label="密码">
+                <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password></el-input>
+            </el-form-item>
+
+            <el-form-item v-if="!isLoginMode" label="确认密码">
+                <el-input v-model="form.confirmPassword" type="password" placeholder="请再次输入密码" show-password></el-input>
+            </el-form-item>
+
+            <el-button v-if="isLoginMode" type="primary" style="width: 100%; margin-top: 10px;" @click="doLogin" round>立 即 登 录</el-button>
+            <el-button v-else type="success" style="width: 100%; margin-top: 10px;" @click="doRegister" round>立 即 注 册</el-button>
+
+            <div style="text-align: right; margin-top: 15px;">
+                <el-link v-if="isLoginMode" type="info" :underline="false" @click="switchMode(false)">没有账号？点击注册 ➔</el-link>
+                <el-link v-else type="info" :underline="false" @click="switchMode(true)">⬅ 返回登录</el-link>
+            </div>
+        </el-form>
+    </el-card>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<script src="https://unpkg.com/element-plus"></script>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+<script>
+    const { createApp, ref } = Vue;
+
+    createApp({
+        setup() {
+            // isLoginMode 为 true 是登录界面，false 是注册界面
+            const isLoginMode = ref(true);
+            // 表单数据绑定
+            const form = ref({ username: '', password: '', confirmPassword: '' });
+
+            // 切换模式时，清空输入框
+            const switchMode = (mode) => {
+                isLoginMode.value = mode;
+                form.value = { username: '', password: '', confirmPassword: '' };
+            };
+
+            // 登录逻辑
+            const doLogin = () => {
+                if (!form.value.username || !form.value.password) {
+                    return ElementPlus.ElMessage.warning('用户名和密码不能为空');
+                }
+                axios.post('/user/login', form.value).then(res => {
+                    if (res.data === 'fail') {
+                        ElementPlus.ElMessage.error('用户名或密码错误！');
+                    } else {
+                        ElementPlus.ElMessage.success('登录成功！');
+                        localStorage.setItem('currentUser', JSON.stringify(res.data));
+                        setTimeout(() => { window.location.href = 'index.html'; }, 1000);
+                    }
+                });
+            };
+
+            // 注册逻辑
+            const doRegister = () => {
+                if (!form.value.username || !form.value.password) {
+                    return ElementPlus.ElMessage.warning('请填写完整信息！');
+                }
+                if (form.value.password !== form.value.confirmPassword) {
+                    return ElementPlus.ElMessage.error('两次输入的密码不一致！');
+                }
+
+                // 提交给刚才写的注册接口
+                axios.post('/user/register', form.value).then(res => {
+                    if (res.data === 'exist') {
+                        ElementPlus.ElMessage.error('该用户名已被占用，换一个吧！');
+                    } else if (res.data === 'success') {
+                        ElementPlus.ElMessage.success('注册成功！快去登录吧！');
+                        // 注册成功后，自动切回登录界面
+                        switchMode(true);
+                    }
+                }).catch(() => {
+                    ElementPlus.ElMessage.error('系统异常，注册失败');
+                });
+            };
+
+            return { form, isLoginMode, switchMode, doLogin, doRegister };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>
