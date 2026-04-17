@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+//常高明
 @RestController // 告诉 Spring Boot 这是一个专门返回数据的控制层接口
 @RequestMapping("/goods") // 统一分配的基础路径：/goods
 public class GoodsController {
